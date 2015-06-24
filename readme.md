@@ -5,7 +5,7 @@
 
 ### To-Do
 
-- Move checked handles to the footer by re-enqueueing them
+- Change the functionality to EXCLUDE checked items from the footer
 - Move `set_front_end_scripts()` to it's own file that is ran on the front end
 - Only run the rest of the code when `is_admin()`
 

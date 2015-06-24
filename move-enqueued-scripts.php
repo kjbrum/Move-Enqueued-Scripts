@@ -29,6 +29,11 @@ class MoveEnqueuedScripts {
 
         // Get the front end scripts
         add_action('wp_footer', array( $this, 'set_front_end_scripts'), 999 );
+
+        // Move the selected scripts
+        if( !is_admin() ) {
+            add_action('init', array( $this, 'move_selected_scripts'), 999 );
+        }
     }
 
     /**
@@ -54,31 +59,22 @@ class MoveEnqueuedScripts {
     public function set_front_end_scripts( $handles = array() ) {
         global $wp_scripts;
 
-        // Get all the scripts
-        foreach( $wp_scripts -> registered as $registered ) {
-            $script_urls[ $registered -> handle ] = $registered -> src;
-        }
+        $registered = $wp_scripts->registered;
+        $footer = $wp_scripts->in_footer;
+        $queue = $wp_scripts->queue;
 
-        // If nothing, add the queue
-        if( empty( $handles ) ) {
-            $handles = array_merge( $wp_scripts -> queue );
-            array_values( $handles );
-        }
+        $not_in_footer = array_diff( $queue, $footer );
 
-        // Build a string of the handles
-        $front_end_handles = '';
-        foreach( $handles as $handle ) {
-            if( !empty( $script_urls[ $handle ] ) ) {
+        foreach ($not_in_footer as $handle) {
+            if( $handle != 'jquery' ) {
                 $front_end_handles[] = array(
                     'handle'         => $handle,
-                    'path'           => $script_urls[ $handle ]
+                    'path'           => $registered[$handle]->src
                 );
             }
         }
 
-        // echo '<pre>'; var_dump($front_end_handles); echo '</pre>'; exit;
-
-        update_option('mes_front_end_scripts', $front_end_handles );
+        update_option( 'mes_front_end_scripts', $front_end_handles );
     }
 
     /**
@@ -95,38 +91,58 @@ class MoveEnqueuedScripts {
                 $this->handle_form_submission();
 
                 // Get the moved scripts
-                $moved_scripts = get_option('mes_front_end_scripts_moved');
-                if(empty($moved_scripts))
+                $moved_scripts = get_option( 'mes_front_end_scripts_moved' );
+
+                if( empty( $moved_scripts ) )
                     $moved_scripts = array();
 
                 // Get all the scripts
-                $scripts = get_option('mes_front_end_scripts');
+                $scripts = get_option( 'mes_front_end_scripts' );
             ?>
 
             <p>This allows you to move enqueued scripts that aren't already in the footer, to the footer.<br><strong>Note:</strong> Some scripts may be missing.</p>
             <form  method="post" enctype="multipart/form-data">
-                <?php wp_nonce_field('mes-form-submission'); ?>
+                <?php wp_nonce_field( 'mes-form-submission' ); ?>
                 <table class="form-table">
                     <tbody>
                         <tr>
-                            <th scope="row"><label for="svg_file">Scripts:<sup>*</sup></label></th>
+                            <th scope="row"><label for="svg_file">Exclude Scripts:</label></th>
                             <td>
                                 <fieldset>
                                     <legend class="screen-reader-text"><span>Default article settings</span></legend>
-                                    <?php foreach($scripts as $script) : ?>
-                                        <label for="<?php echo $script['handle']; ?>">
-                                        <input name="handles[<?php echo $script['handle']; ?>]" type="checkbox" id="<?php echo $script['handle']; ?>" value="<?php echo $script['path']; ?>" <?php echo (array_key_exists($script['handle'], $moved_scripts))?'checked="checked"':''; ?>>
-                                        <strong><?php echo ucwords(str_replace('-', ' ', $script['handle'])); ?></strong> (<?php echo $script['path']; ?>)</label>
+                                    <?php foreach($moved_scripts as $key => $val) : ?>
+                                        <label for="<?php echo $key; ?>">
+                                        <input name="handles[<?php echo $key; ?>]" type="checkbox" id="<?php echo $key; ?>" value="<?php echo $val; ?>" checked="checked">
+                                        <strong><?php echo ucwords(str_replace('-', ' ', $key)); ?></strong> <?php echo ($val)?'('.$val.')':''; ?></label>
                                         <br>
                                     <?php endforeach; ?>
-                                    <p class="description">Check the scripts you wish to move to the footer.</p>
+
+                                    <?php foreach($scripts as $script) : ?>
+                                        <label for="<?php echo $script['handle']; ?>">
+                                        <input name="handles[<?php echo $script['handle']; ?>]" type="checkbox" id="<?php echo $script['handle']; ?>" value="<?php echo $script['path']; ?>" <?php echo ( array_key_exists( $script['handle'], $moved_scripts ) )?'checked="checked"':''; ?>>
+                                        <strong><?php echo ucwords(str_replace('-', ' ', $script['handle'])); ?></strong> <?php echo ($script['path'])?'('.$script['path'].')':''; ?></label>
+                                        <br>
+                                    <?php endforeach; ?>
+                                    <p class="description">Check the scripts that you don't want to be moved to the footer.</p>
+                                </fieldset>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <th scope="row"><label for="svg_file">jQuery:</label></th>
+                            <td>
+                                <fieldset>
+                                    <legend class="screen-reader-text"><span>Default article settings</span></legend>
+                                        <label for="<?php echo $key; ?>">
+                                        <input name="handles[jquery]" type="checkbox" id="jquery" value="<?php echo home_url().'/wp-includes/js/jquery/jquery.js'; ?>">
+                                        Move jQuery to the footer</label>
                                 </fieldset>
                             </td>
                         </tr>
                     </tbody>
                 </table>
 
-                <?php submit_button('Submit') ?>
+                <?php submit_button( 'Submit' ) ?>
             </form>
         </div>
     <?php
@@ -138,17 +154,19 @@ class MoveEnqueuedScripts {
      *  @return  void
      */
     public function handle_form_submission() {
-        $scripts = get_option('mes_front_end_scripts_moved' );
+        $scripts = get_option( 'mes_front_end_scripts_moved' );
 
-        if( !isset( $_POST['handles'] ) ) {
-            if( !empty($scripts) ) {
-                update_option('mes_front_end_scripts_moved', '' );
+        if( !empty( $_POST ) && !isset( $_POST['handles'] ) ) {
+            if( $scripts ) {
+                update_option( 'mes_front_end_scripts_moved', '' );
 
                 echo '<div id="message" class="updated notice is-dismissible">
                     <p>Settings have been updated.</p>
                     <button type="button" class="notice-dismiss"><span class="screen-reader-text">Dismiss this notice.</span></button>
                 </div>';
 
+                return;
+            } else {
                 return;
             }
         }
@@ -157,10 +175,10 @@ class MoveEnqueuedScripts {
         if( isset( $_POST['handles'] ) && ( $scripts != $_POST['handles'] ) ) {
 
             // Check for nonce
-            check_admin_referer('mes-form-submission');
+            check_admin_referer( 'mes-form-submission' );
 
             // Update the options
-            $updated = update_option('mes_front_end_scripts_moved', $_POST['handles'] );
+            $updated = update_option( 'mes_front_end_scripts_moved', $_POST['handles'] );
 
             // Check for saving errors
             if( $updated ) {
@@ -175,6 +193,26 @@ class MoveEnqueuedScripts {
                 </div>';
 
                 return;
+            }
+        }
+
+    }
+
+    /**
+     *  Handle reenqueueing the scripts
+     *
+     *  @return  void
+     */
+    public function move_selected_scripts() {
+        if( $scripts = get_option( 'mes_front_end_scripts_moved' ) ) {
+            foreach( $scripts as $key => $val ) {
+                if($key == 'jquery') {
+                    wp_deregister_script( $key );
+                    wp_register_script( 'jquery', home_url().'/wp-includes/js/jquery/jquery.js', '', '', true );
+                } else {
+                    wp_deregister_script( $key );
+                    wp_register_script( $key, $val, '', '', true );
+                }
             }
         }
     }
